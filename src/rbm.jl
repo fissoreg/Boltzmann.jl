@@ -8,8 +8,8 @@ import StatsBase: sample, sample!
 
 @runonce const Mat{T} = AbstractArray{T, 2}
 @runonce const Vec{T} = AbstractArray{T, 1}
-const Gaussian = Normal
-
+@runonce const Gaussian = Distributions.Normal
+@runonce const IsingSpin = Distributions.Categorical
 
 """
 Distribution with a single possible value. Used e.g. during sampling
@@ -46,6 +46,7 @@ end
         W::Matrix{T}         # matrix of weights between vis and hid vars
         vbias::Vector{T}     # biases for visible variables
         hbias::Vector{T}     # biases for hidden variables
+	activation::Function
     end
 
 end
@@ -56,6 +57,7 @@ Construct RBM. Parameters:
  * T - type of RBM parameters (e.g. weights and biases; by default, Float64)
  * V - type of visible units
  * H - type of hidden units
+ * activation - activation function to use
  * n_vis - number of visible units
  * n_hid - number of hidden units
 
@@ -64,25 +66,28 @@ Optional parameters:
  * sigma - variance to use during parameter initialization
 
 """
-function RBM(T::Type, V::Type, H::Type,
+function RBM(T::Type, V::Type, H::Type,activation::Function,
              n_vis::Int, n_hid::Int; sigma=0.01)
     RBM{T,V,H}(map(T, rand(Normal(0, sigma), n_hid, n_vis)),
-             zeros(n_vis), zeros(n_hid))
+             zeros(n_vis), zeros(n_hid),activation)
 end
 
 RBM(V::Type, H::Type, n_vis::Int, n_hid::Int; sigma=0.01) =
-    RBM(Float64, V, H, n_vis, n_hid; sigma=sigma)
+    RBM(Float64, V, H, logistic, n_vis, n_hid; sigma=sigma)
 
 
 # some well-known RBM kinds
 
 """Same as RBM{Float64,Degenerate,Bernoulli}"""
 BernoulliRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
-    RBM(Float64, Degenerate, Bernoulli, n_vis, n_hid; sigma=sigma)
+    RBM(Degenerate, Bernoulli, n_vis, n_hid; sigma=sigma)
 
 """Same as RBM{Float64,Gaussian,Bernoulli}"""
 GRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
-    RBM(Float64, Normal, Bernoulli, n_vis, n_hid; sigma=sigma)
+    RBM(Normal, Bernoulli, n_vis, n_hid; sigma=sigma)
+
+IsingRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
+	RBM(Float64, IsingSpin, IsingSpin, IsingActivation, n_vis, n_hid)
 
 
 function Base.show(io::IO, rbm::RBM{T,V,H}) where {T,V,H}
@@ -95,13 +100,13 @@ end
 
 function hid_means(rbm::RBM, vis::Mat{T}) where T
     p = rbm.W * vis .+ rbm.hbias
-    return logistic(p)
+    return rbm.activation(p)
 end
 
 
 function vis_means(rbm::RBM, hid::Mat{T}) where T
     p = rbm.W' * hid .+ rbm.vbias
-    return logistic(p)
+    return rbm.activation(p)
 end
 
 
@@ -115,6 +120,9 @@ function sample(::Type{Bernoulli}, means::Mat{T}) where T
     return map(T, float((rand(size(means)) .< means)))
 end
 
+function sample(::Type{IsingSpin}, means::Mat{T}) where T
+    return map(x -> x ? 1.0 : -1.0, rand(size(means)) .< means)
+end
 
 function sample(::Type{Gaussian}, means::Mat{T}) where T
     sigma2 = 1                   # using fixed standard diviation
@@ -382,7 +390,7 @@ NOTE: this function is incremental, so one can, for example, run it for
 and check the difference.
 """
 function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
-    @assert minimum(X) >= 0 && maximum(X) <= 1
+    #@assert minimum(X) >= 0 && maximum(X) <= 1
     ctx = copy(opts)
     check_options(ctx)
     n_examples = size(X, 2)
