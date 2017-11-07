@@ -1,15 +1,17 @@
 
 abstract type AbstractReporter end
 
-struct TextReporter
-end
+abstract type EpochReporter <: AbstractReporter end
+abstract type BatchReporter <: AbstractReporter end
+
+struct TextReporter end
 
 function report(r::TextReporter, rbm::AbstractRBM,
-                epoch::Int, epoch_time::Float64, score::Float64)
+                epoch::Int, epoch_time::Float64, score::Float64, ctx::Dict{Any,Any})
     println("[Epoch $epoch] Score: $score [$(epoch_time)s]")
 end
 
-function report(r::TextReporter, dbn::DBN, epoch::Int, layer::Int)
+function report(r::TextReporter, dbn::DBN, epoch::Int, layer::Int, ctx::Dict{Any,Any})
     println("[Layer $layer] Starting epoch $epoch")
 end
 

@@ -235,7 +235,7 @@ function persistent_contdiv(rbm::AbstractRBM, vis::Mat, ctx::Dict)
     # take positive samples from real data
     v_pos, h_pos, _, _ = gibbs(rbm, vis)
     # take negative samples from "fantasy particles"
-    persistent_chain, _, v_neg, h_neg = gibbs(rbm, vis, n_times=n_gibbs)
+    ctx[:persistent_chain], _, v_neg, h_neg = gibbs(rbm, vis, n_times=n_gibbs)
     return v_pos, h_pos, v_neg, h_neg
 end
 
@@ -395,6 +395,7 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
     check_options(ctx)
     n_examples = size(X, 2)
     batch_size = @get(ctx, :batch_size, 100)
+    n_batches = Int(ceil(n_examples/batch_size))
     batch_idxs = split_evenly(n_examples, batch_size)
     if @get(ctx, :randomize, false)
         batch_idxs = sample(batch_idxs, length(batch_idxs); replace=false)
@@ -410,10 +411,16 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
                 batch = full(X[:, batch_start:batch_end])
                 batch = ensure_type(T, batch)
                 fit_batch!(rbm, batch, ctx)
+                if ((typeof(reporter) <: BatchReporter) &&
+                    (n_batches % (batch_end/batch_size) == 0))
+		    reporter.exec(rbm, epoch, scorer(rbm,X), ctx)
+		end
             end
         end
         score = scorer(rbm, X)
-        report(reporter, rbm, epoch, epoch_time, score)
+        if typeof(reporter) <: EpochReporter 
+          reporter.exec(reporter, rbm, epoch, epoch_time, score, ctx)
+        end
     end
     return rbm
 end
