@@ -228,6 +228,7 @@ function persistent_contdiv(rbm::AbstractRBM, vis::Mat, ctx::Dict)
     n_gibbs = @get(ctx, :n_gibbs, 1)
     persistent_chain = @get_array(ctx, :persistent_chain, size(vis), vis)
     if size(persistent_chain) != size(vis)
+        println("persistent_chain not initialized")
         # persistent_chain not initialized or batch size changed
         # re-initialize
         persistent_chain = vis
@@ -235,7 +236,8 @@ function persistent_contdiv(rbm::AbstractRBM, vis::Mat, ctx::Dict)
     # take positive samples from real data
     v_pos, h_pos, _, _ = gibbs(rbm, vis)
     # take negative samples from "fantasy particles"
-    ctx[:persistent_chain], _, v_neg, h_neg = gibbs(rbm, vis, n_times=n_gibbs)
+    _, _, v_neg, h_neg = gibbs(rbm, persistent_chain, n_times=n_gibbs)
+    copy!(ctx[:persistent_chain], v_neg)
     return v_pos, h_pos, v_neg, h_neg
 end
 
@@ -411,8 +413,9 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
                 batch = full(X[:, batch_start:batch_end])
                 batch = ensure_type(T, batch)
                 fit_batch!(rbm, batch, ctx)
+                #println(batch_end/batch_size)
                 if ((typeof(reporter) <: BatchReporter) &&
-                    (n_batches % (batch_end/batch_size) == 0))
+                    ((batch_end/batch_size) % 10 == 0))
 		    reporter.exec(rbm, epoch, scorer(rbm,X), ctx)
 		end
             end
