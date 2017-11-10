@@ -407,15 +407,16 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
     reporter = @get_or_create(ctx, :reporter, TextReporter())
     for epoch=1:n_epochs
         epoch_time = @elapsed begin
+            current_batch = 0
             for (batch_start, batch_end) in batch_idxs
                 # BLAS.gemm! can't handle sparse matrices, so cheaper
                 # to make it dense here
                 batch = full(X[:, batch_start:batch_end])
                 batch = ensure_type(T, batch)
+                current_batch += 1
                 fit_batch!(rbm, batch, ctx)
-                #println(batch_end/batch_size)
                 if ((typeof(reporter) <: BatchReporter) &&
-                    ((batch_end/batch_size) % 10 == 0))
+                    (current_batch % reporter.every) == 0)
 		    reporter.exec(rbm, epoch, scorer(rbm,X), ctx)
 		end
             end
