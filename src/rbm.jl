@@ -417,13 +417,13 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
                 fit_batch!(rbm, batch, ctx)
                 if ((typeof(reporter) <: BatchReporter) &&
                     (current_batch % reporter.every) == 0)
-		    reporter.exec(rbm, epoch, scorer(rbm,X), ctx)
+		    report(reporter, rbm, epoch, current_batch, scorer, X, ctx)
 		end
             end
         end
-        score = scorer(rbm, X)
+        #score = scorer(rbm, X)
         if typeof(reporter) <: EpochReporter 
-          reporter.exec(reporter, rbm, epoch, epoch_time, score, ctx)
+          report(reporter, rbm, epoch, epoch_time, scorer, X, ctx)
         end
     end
     return rbm
