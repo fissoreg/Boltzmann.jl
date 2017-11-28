@@ -415,6 +415,8 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
                 batch = ensure_type(T, batch)
                 current_batch += 1
                 fit_batch!(rbm, batch, ctx)
+                #println(current_batch)
+                #println((typeof(reporter) <: BatchReporter) && (current_batch % reporter.every) == 0)
                 if ((typeof(reporter) <: BatchReporter) &&
                     (current_batch % reporter.every) == 0)
 		    report(reporter, rbm, epoch, current_batch, scorer, X, ctx)
