@@ -173,6 +173,19 @@ function free_energy(rbm::RBM, vis::Mat)
     return result
 end
 
+# a copy-paste!!!!!!!!!!!!!! fhweihfioewmfcniluewynveiuewiufhu
+function free_energy(rbm::RBM{T,IsingSpin,IsingSpin}, vis::Mat) where T
+    println("Correct fe")
+    vb = sum(vis .* rbm.vbias, 1)
+
+    fe_exp = 2*cosh.(rbm.W * vis .+ rbm.hbias)
+    tofinite!(fe_exp; nozeros=true)
+
+    Wx_b_log = sum(log.(fe_exp), 1)
+    result = - vb - Wx_b_log
+
+    return result
+end
 
 function score_samples(rbm::AbstractRBM, vis::Mat;
                           sample_size=10000)
@@ -202,7 +215,8 @@ function score_samples(rbm::AbstractRBM, vis::Mat;
 end
 
 function pseudo_likelihood(rbm::AbstractRBM, X)
-    return mean(score_samples(rbm, X))
+    m = mean(score_samples(rbm, X))
+    return m == -Inf ? 0 : m
 end
 
 
