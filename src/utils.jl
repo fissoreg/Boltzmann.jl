@@ -107,6 +107,14 @@ function IsingActivation(x)
   return 1 ./ (1 + exp.(-2x))
 end
 
+function MeansBernoulli(x)
+  return x
+end
+
+function MeansIsing(x)
+  return 2*x-1
+end
+
 const KNOWN_OPTIONS =
     [:debug, :gradient, :update, :sampler, :scorer, :reporter,
      :batch_size, :n_epochs, :n_gibbs,

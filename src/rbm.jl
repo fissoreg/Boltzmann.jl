@@ -46,7 +46,8 @@ end
         W::Matrix{T}         # matrix of weights between vis and hid vars
         vbias::Vector{T}     # biases for visible variables
         hbias::Vector{T}     # biases for hidden variables
-	activation::Function
+	    activation::Function
+        means::Function
     end
 
 end
@@ -66,14 +67,14 @@ Optional parameters:
  * sigma - variance to use during parameter initialization
 
 """
-function RBM(T::Type, V::Type, H::Type,activation::Function,
-             n_vis::Int, n_hid::Int; sigma=0.01)
+function RBM(T::Type, V::Type, H::Type, activation::Function, means::Function,
+             n_vis::Int, n_hid::Int; sigma=0.01, InitVisBias=zeros(n_vis))
     RBM{T,V,H}(map(T, rand(Normal(0, sigma), n_hid, n_vis)),
-             zeros(n_vis), zeros(n_hid),activation)
+             InitVisBias, zeros(n_hid), activation, means)
 end
 
 RBM(V::Type, H::Type, n_vis::Int, n_hid::Int; sigma=0.01) =
-    RBM(Float64, V, H, logistic, n_vis, n_hid; sigma=sigma)
+    RBM(Float64, V, H, logistic, MeansBernoulli, n_vis, n_hid; sigma=sigma)
 
 
 # some well-known RBM kinds
@@ -86,9 +87,24 @@ BernoulliRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
 GRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
     RBM(Normal, Bernoulli, n_vis, n_hid; sigma=sigma)
 
-IsingRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
-	RBM(Float64, IsingSpin, IsingSpin, IsingActivation, n_vis, n_hid)
+"""Same as IsingRBM{Float64,Ising,Ising}"""
+function IsingRBM(n_vis::Int, n_hid::Int; sigma=0.01, TrainData::Mat=[])
+    # Some "tiny" value, used to enforce min/max boundary conditions
+    eps = 1e-8
 
+    InitialVisBias = zeros(n_vis)
+    if !isempty(TrainData)
+        ProbVis = mean(TrainData,2)             # Mean across  samples
+        ProbVis = (ProbVis+1)/2
+
+        ProbVis = max(ProbVis,eps)              # Some regularization (avoid Inf/NaN)
+        ProbVis = min(ProbVis,1 - eps)          # ''
+
+        InitialVisBias = 0.5*log(ProbVis ./ (1-ProbVis)) # Biasing as the log-proportion
+
+    end
+	return RBM(Float64, IsingSpin, IsingSpin, IsingActivation, MeansIsing, n_vis, n_hid; InitVisBias=InitialVisBias)
+end
 
 function Base.show(io::IO, rbm::RBM{T,V,H}) where {T,V,H}
     n_vis = size(rbm.vbias, 1)
@@ -98,15 +114,22 @@ end
 
 ## utils
 
-function hid_means(rbm::RBM, vis::Mat{T}) where T
+function PassVisToHid(rbm::RBM, vis::Mat{T}) where T
     p = rbm.W * vis .+ rbm.hbias
-    return rbm.activation(p)
+    return p
 end
 
-
-function vis_means(rbm::RBM, hid::Mat{T}) where T
+function PassHidToVis(rbm::RBM, hid::Mat{T}) where T
     p = rbm.W' * hid .+ rbm.vbias
-    return rbm.activation(p)
+    return p
+end
+
+function hid_prob_one(rbm::RBM, vis::Mat{T}) where T
+    return rbm.activation(PassVisToHid(rbm,vis))
+end
+
+function vis_prob_one(rbm::RBM, hid::Mat{T}) where T
+    return rbm.activation(PassHidToVis(rbm,hid))
 end
 
 
@@ -116,12 +139,14 @@ function sample(::Type{Degenerate}, means::Mat{T}) where T
     return means
 end
 
-function sample(::Type{Bernoulli}, means::Mat{T}) where T
-    return map(T, float((rand(size(means)) .< means)))
+# prob : probability of being 1
+function sample(::Type{Bernoulli}, prob::Mat{T}) where T
+    return map(T, float((rand(size(prob)) .< prob)))
 end
 
-function sample(::Type{IsingSpin}, means::Mat{T}) where T
-    return map(x -> x ? 1.0 : -1.0, rand(size(means)) .< means)
+# prob : probability of being 1
+function sample(::Type{IsingSpin}, prob::Mat{T}) where T
+    return map(x -> x ? 1.0 : -1.0, rand(size(prob)) .< prob)
 end
 
 function sample(::Type{Gaussian}, means::Mat{T}) where T
@@ -135,26 +160,33 @@ end
 
 
 function sample_hiddens(rbm::AbstractRBM{T,V,H}, vis::Mat) where {T,V,H}
-    means = hid_means(rbm, vis)
-    return sample(H, means)
+    prob_one = hid_prob_one(rbm, vis)
+    return sample(H, prob_one), prob_one
 end
 
 
 function sample_visibles(rbm::AbstractRBM{T,V,H}, hid::Mat) where {T,V,H}
-    means = vis_means(rbm, hid)
-    return sample(V, means)
+    prob_one = vis_prob_one(rbm, hid)
+    return sample(V, prob_one), prob_one
 end
 
 
-function gibbs(rbm::AbstractRBM, vis::Mat; n_times=1)
+function gibbs_training(rbm::AbstractRBM, vis::Mat; n_times=1)
     v_pos = vis
-    h_pos = sample_hiddens(rbm, v_pos)
-    v_neg = sample_visibles(rbm, h_pos)
-    h_neg = sample_hiddens(rbm, v_neg)
+    h_sample, h_pos = sample_hiddens(rbm, v_pos)
+
+    v_sample, v_prob = sample_visibles(rbm, h_sample)
+    h_sample, h_prob = sample_hiddens(rbm, v_sample)
     for i=1:n_times-1
-        v_neg = sample_visibles(rbm, h_neg)
-        h_neg = sample_hiddens(rbm, v_neg)
+        v_sample, v_prog = sample_visibles(rbm, h_sample)
+        h_sample, h_prob = sample_hiddens(rbm, v_sample)
     end
+    v_neg = v_sample
+    h_neg = h_prob
+
+    h_pos = rbm.means(h_pos)
+    h_neg = rbm.means(h_neg)
+
     return v_pos, h_pos, v_neg, h_neg
 end
 
@@ -215,7 +247,7 @@ Contrastive divergence sampler. Options:
 """
 function contdiv(rbm::AbstractRBM, vis::Mat, ctx::Dict)
     n_gibbs = @get(ctx, :n_gibbs, 1)
-    v_pos, h_pos, v_neg, h_neg = gibbs(rbm, vis, n_times=n_gibbs)
+    v_pos, h_pos, v_neg, h_neg = gibbs_training(rbm, vis, n_times=n_gibbs)
     return v_pos, h_pos, v_neg, h_neg
 end
 
@@ -233,10 +265,10 @@ function persistent_contdiv(rbm::AbstractRBM, vis::Mat, ctx::Dict)
         # re-initialize
         persistent_chain = vis
     end
-    # take positive samples from real data
-    v_pos, h_pos, _, _ = gibbs(rbm, vis)
+    # take positive samples from real data (get h_pos)
+    v_pos, h_pos, _, _ = gibbs_training(rbm, vis)
     # take negative samples from "fantasy particles"
-    _, _, v_neg, h_neg = gibbs(rbm, persistent_chain, n_times=n_gibbs)
+    _, _, v_neg, h_neg = gibbs_training(rbm, persistent_chain, n_times=n_gibbs)
     copy!(ctx[:persistent_chain], v_neg)
     return v_pos, h_pos, v_neg, h_neg
 end
@@ -441,11 +473,11 @@ end
 
 """Given trained RBM and sample of visible data, generate similar items"""
 function generate(rbm::RBM{T}, vis::Vec; n_gibbs=1) where T
-    return gibbs(rbm, reshape(ensure_type(T, vis), length(vis), 1); n_times=n_gibbs)[3]
+    return gibbs_training(rbm, reshape(ensure_type(T, vis), length(vis), 1); n_times=n_gibbs)[3]
 end
 
 function generate(rbm::RBM{T}, X::Mat; n_gibbs=1) where T
-    return gibbs(rbm, ensure_type(T, X); n_times=n_gibbs)[3]
+    return gibbs_training(rbm, ensure_type(T, X); n_times=n_gibbs)[3]
 end
 
 
