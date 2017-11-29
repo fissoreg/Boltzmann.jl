@@ -1,3 +1,5 @@
+# TODO : correcting the negative term
+
 
 using Base.LinAlg
 using Base.LinAlg.BLAS
@@ -102,7 +104,6 @@ function IsingRBM(n_vis::Int, n_hid::Int; sigma=0.01, TrainData=[])
     if !isempty(TrainData)
         InitialVisBias = getBiasFromSamples(TrainData, 0.5)
     end
-    println(size(InitialVisBias))
 	return RBM(Float64, IsingSpin, IsingSpin, IsingActivation, MeansIsing, MargHiddenIsing, FlipIsing, n_vis, n_hid; InitVisBias=InitialVisBias[:,1])
 end
 
@@ -206,15 +207,15 @@ function free_energy(rbm::RBM, vis::Mat)
 end
 
 
-function score_sample_tap(rbm::RBM, vis::Mat)
-    m_vis, m_hid = iter_mag(rbm, vis; n_times=n_iter, approx=:tap2)
+function score_samples_tap(rbm::RBM, vis::Mat; n_iter=5)
+    m_vis, m_hid = iter_mag(rbm, vis; approx="tap2", n_times=n_iter)
 
     # regularization
     eps=1e-6
-    m_vis = max(m_vis, -1+eps)
-    m_hid = max(m_hid, -1+eps)
-    m_vis = min(m_vis,1-eps)
-    m_hid = min(m_hid,1-eps)
+    m_vis = max.(m_vis, -1+eps)
+    m_hid = max.(m_hid, -1+eps)
+    m_vis = min.(m_vis,1-eps)
+    m_hid = min.(m_hid,1-eps)
 
     fe_tap = free_energy_tap(rbm, m_vis, m_hid)
     fe = free_energy(rbm,vis)
@@ -245,18 +246,18 @@ function free_energy_tap(rbm::RBM, mag_vis::Mat, mag_hid::Mat)
     mag_hid2 = abs2.(mag_hid)
 
 
-    Entropy = sum(entropyMF(rbm, mag_vis, mag_hid),1)
-    U_naive = -( mag_vis*rbm.vbias + mag_hid*rbm.hbias + sum(mag_hid.*(rbm.W*mag_vis),1) )
-    Onsager = -( 0.5* sum( (rbm.W2*(1-mag_vis2)).*(1-mag_hid2,1) ) )
-    fe_tap = Entropy-U_naive-Onsager
+    Entropy = entropyMF(rbm, mag_vis, mag_hid)
+    U_naive = -( sum(mag_vis.*rbm.vbias,1) + sum(mag_hid.*rbm.hbias,1) + sum(mag_hid.*(rbm.W*mag_vis),1) )
+    Onsager = -( 0.5* sum( (rbm.W2*(1-mag_vis2)).*(1-mag_hid2),1 ) )
+    fe_tap = U_naive+Onsager - Entropy
     return fe_tap
 end
 
 
 
 function entropyMF(rbm::RBM, mag_vis::Mat, mag_hid::Mat)
-    S =  entropy_bin(0.5*(1+mag_vis)) + entropy_bin(0.5*(1-mag_vis))
-    S += entropy_bin(0.5*(1+mag_hid)) + entropy_bin(0.5*(1-mag_hid))
+    S =  sum(entropy_bin(0.5*(1+mag_vis)) + entropy_bin(0.5*(1-mag_vis)),1)
+    S += sum(entropy_bin(0.5*(1+mag_hid)) + entropy_bin(0.5*(1-mag_hid)),1)
     return S
 end
 
@@ -292,6 +293,11 @@ function pseudo_likelihood(rbm::AbstractRBM, X)
     return mean(score_samples(rbm, X))/N
 end
 
+
+function pseudo_likelihood_tap(rbm::AbstractRBM, X)
+    N=size(X,1)
+    mean(score_samples_tap(rbm, X))/N
+end
 
 ## gradient calculation
 
@@ -490,7 +496,8 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
         batch_idxs = sample(batch_idxs, length(batch_idxs); replace=false)
     end
     n_epochs = @get(ctx, :n_epochs, 10)
-    scorer = @get_or_create(ctx, :scorer, pseudo_likelihood)
+    # scorer = @get_or_create(ctx, :scorer, pseudo_likelihood)    
+    scorer = @get_or_create(ctx, :scorer, pseudo_likelihood_tap)
     reporter = @get_or_create(ctx, :reporter, TextReporter)
     println("INIT ",scorer(rbm, X))
     for epoch=1:n_epochs
@@ -557,7 +564,7 @@ hbias(rbm::RBM) = rbm.hbias
 vbias(rbm::RBM) = rbm.vbias
 
 
-function mag_vis_nmf(rbm::RBM, m_vis::Mat{Float64}, m_hid::Mat{Float64})
+function mag_vis_nmf(rbm::RBM, m_vis::Mat{Float64}, m_hid::Mat{Float64})x&
     return(tanh.(PassHidToVis(rbm,m_hid)))
 end
 
@@ -580,7 +587,7 @@ function iter_mag_training(rbm::RBM, vis::Mat{Float64}, ctx::Dict; n_times=1)
     dump =   @get(ctx, :dump ,0.5)
 
     v_pos = vis
-    h_pos = rbm.activation(PassVisToHid(rbm,vis))
+    h_pos = mag_hid_nmf(rbm,vis,zeros(1,1)) #rbm.activation(PassVisToHid(rbm,vis))
     if approx == "nmf"
         mag_vis = mag_vis_nmf
         mag_hid = mag_hid_nmf
@@ -599,9 +606,12 @@ function iter_mag_training(rbm::RBM, vis::Mat{Float64}, ctx::Dict; n_times=1)
     return v_pos, h_pos, m_vis, m_hid
 end
 
-function iter_mag(rbm::RBM, vis::Mat{Float64}, ctx::Dict; n_times=1)
-    approx = @get(ctx, :approx, "tap2")
-    dump =   @get(ctx, :dump ,0.5)
+function iter_mag(rbm::RBM, vis::Mat{Float64}; approx="tap2", n_times=1, dump=0.5)
+    #approx = @get(ctx, :approx, "tap2")
+    #dump =   @get(ctx, :dump ,0.5)
+
+    v_pos = vis
+    h_pos = mag_hid_nmf(rbm,vis,zeros(1,1))
 
     if approx == "nmf"
         mag_vis = mag_vis_nmf

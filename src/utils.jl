@@ -137,7 +137,7 @@ const KNOWN_OPTIONS =
      :batch_size, :n_epochs, :n_gibbs,
      :lr, :momentum, :weight_decay_kind, :weight_decay_rate,
      :sparsity_cost, :sparsity_target,
-     :randomize, :approx,
+     :randomize, :approx, :dump,
      # deprecated options
      :n_iter]
 const DEPRECATED_OPTIONS = Dict(:n_iter => :n_epochs)
@@ -192,7 +192,7 @@ function tofinite!(x::Array; nozeros=false)
         if x[i] == 0.0 && nozeros
             x[i] = nextfloat(x[i])
         end
-    end
+    end 
 end
 
 
@@ -219,9 +219,9 @@ function getBiasFromSamples(Data, fact::Float64; eps=1e-8)
         ProbVis = max(ProbVis,eps)              # Some regularization (avoid Inf/NaN)
         ProbVis = min(ProbVis,1 - eps)          # ''
 
-        InitialVisBias = fact*log(ProbVis ./ (1-ProbVis)) # Biasing as the log-proportion
+        InitialVisBias = fact*log.(ProbVis ./ (1-ProbVis)) # Biasing as the log-proportion
     end
-    return InitialVisBias
+    return InitialVisBias[:,1]
 end
 
 function entropy_bin(x)
