@@ -43,11 +43,14 @@ end
     unit type V and hidden unit type H.
     """
     mutable struct RBM{T,V,H} <: AbstractRBM{T,V,H}
-        W::Matrix{T}         # matrix of weights between vis and hid vars
+        W::Matrix{T}         # matrix of weights   between vis and hid vars
+        W2::Matrix{T}        # matrix of weights^2 between vis and hid vars
         vbias::Vector{T}     # biases for visible variables
         hbias::Vector{T}     # biases for hidden variables
 	    activation::Function
         means::Function
+        marg::Function
+        flip::Function
     end
 
 end
@@ -67,43 +70,40 @@ Optional parameters:
  * sigma - variance to use during parameter initialization
 
 """
-function RBM(T::Type, V::Type, H::Type, activation::Function, means::Function,
-             n_vis::Int, n_hid::Int; sigma=0.01, InitVisBias=zeros(n_vis))
-    RBM{T,V,H}(map(T, rand(Normal(0, sigma), n_hid, n_vis)),
-             InitVisBias, zeros(n_hid), activation, means)
+function RBM(T::Type, V::Type, H::Type, activation::Function, means::Function, marg::Function,
+             flip::Function, n_vis::Int, n_hid::Int; sigma=0.01, InitVisBias=zeros(n_vis))
+    RBM{T,V,H}(map(T, rand(Normal(0, sigma), n_hid, n_vis)), zeros(n_hid, n_vis),
+             InitVisBias, zeros(n_hid), activation, means, marg, flip)
 end
 
-RBM(V::Type, H::Type, n_vis::Int, n_hid::Int; sigma=0.01) =
-    RBM(Float64, V, H, logistic, MeansBernoulli, n_vis, n_hid; sigma=sigma)
+RBM(V::Type, H::Type, n_vis::Int, n_hid::Int; sigma=0.01, InitVisBias=zeros(n_vis)) =
+    RBM(Float64, V, H, logistic, MeansBernoulli, MargHiddenBernoulli, FlipBernoulli, n_vis, n_hid; sigma=sigma, InitVisBias=InitVisBias)
 
 
 # some well-known RBM kinds
 
 """Same as RBM{Float64,Degenerate,Bernoulli}"""
-BernoulliRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
-    RBM(Degenerate, Bernoulli, n_vis, n_hid; sigma=sigma)
+function BernoulliRBM(n_vis::Int, n_hid::Int; sigma=0.01, TrainData=[])
+    InitialVisBias = zeros(n_vis)    
+    if !isempty(TrainData)
+        InitialVisBias = getBiasFromSamples(TrainData, 1.0)
+    end
+    return RBM(Degenerate, Bernoulli, n_vis, n_hid; sigma=sigma,  InitVisBias=InitialVisBias[:,1])
+end
 
 """Same as RBM{Float64,Gaussian,Bernoulli}"""
 GRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
     RBM(Normal, Bernoulli, n_vis, n_hid; sigma=sigma)
 
 """Same as IsingRBM{Float64,Ising,Ising}"""
-function IsingRBM(n_vis::Int, n_hid::Int; sigma=0.01, TrainData::Mat=[])
-    # Some "tiny" value, used to enforce min/max boundary conditions
-    eps = 1e-8
+function IsingRBM(n_vis::Int, n_hid::Int; sigma=0.01, TrainData=[])
 
     InitialVisBias = zeros(n_vis)
     if !isempty(TrainData)
-        ProbVis = mean(TrainData,2)             # Mean across  samples
-        ProbVis = (ProbVis+1)/2
-
-        ProbVis = max(ProbVis,eps)              # Some regularization (avoid Inf/NaN)
-        ProbVis = min(ProbVis,1 - eps)          # ''
-
-        InitialVisBias = 0.5*log(ProbVis ./ (1-ProbVis)) # Biasing as the log-proportion
-
+        InitialVisBias = getBiasFromSamples(TrainData, 0.5)
     end
-	return RBM(Float64, IsingSpin, IsingSpin, IsingActivation, MeansIsing, n_vis, n_hid; InitVisBias=InitialVisBias)
+    println(size(InitialVisBias))
+	return RBM(Float64, IsingSpin, IsingSpin, IsingActivation, MeansIsing, MargHiddenIsing, FlipIsing, n_vis, n_hid; InitVisBias=InitialVisBias[:,1])
 end
 
 function Base.show(io::IO, rbm::RBM{T,V,H}) where {T,V,H}
@@ -196,7 +196,7 @@ end
 function free_energy(rbm::RBM, vis::Mat)
     vb = sum(vis .* rbm.vbias, 1)
 
-    fe_exp = 1 + exp.(rbm.W * vis .+ rbm.hbias)
+    fe_exp = rbm.marg(rbm.W * vis .+ rbm.hbias) # 1 + exp.(rbm.W * vis .+ rbm.hbias)
     tofinite!(fe_exp; nozeros=true)
 
     Wx_b_log = sum(log.(fe_exp), 1)
@@ -205,6 +205,60 @@ function free_energy(rbm::RBM, vis::Mat)
     return result
 end
 
+
+function score_sample_tap(rbm::RBM, vis::Mat)
+    m_vis, m_hid = iter_mag(rbm, vis; n_times=n_iter, approx=:tap2)
+
+    # regularization
+    eps=1e-6
+    m_vis = max(m_vis, -1+eps)
+    m_hid = max(m_hid, -1+eps)
+    m_vis = min(m_vis,1-eps)
+    m_hid = min(m_hid,1-eps)
+
+    fe_tap = free_energy_tap(rbm, m_vis, m_hid)
+    fe = free_energy(rbm,vis)
+
+    return fe_tap - fe
+end
+"""
+_, _, m_vis, m_hid = iter_mag(rbm, vis; n_times=n_iter, approx="tap2")
+    eps=1e-6
+    m_vis = max(m_vis, eps)
+    m_vis = min(m_vis, 1.0-eps)
+    m_hid = max(m_hid, eps)
+    m_hid = min(m_hid, 1.0-eps)
+
+    m_vis2 = abs2(m_vis)
+    m_hid2 = abs2(m_hid)
+
+    S = - sum(m_vis.*log(m_vis)+(1.0-m_vis).*log(1.0-m_vis),1) - sum(m_hid.*log(m_hid)+(1.0-m_hid).*log(1.0-m_hid),1)
+    U_naive = - gemv('T',m_vis,rbm.vbias)' - gemv('T',m_hid,rbm.hbias)' - sum(gemm('N','N',rbm.W,m_vis).*m_hid,1)
+    Onsager = - 0.5 * sum(gemm('N','N',rbm.W2,m_vis-m_vis2).*(m_hid-m_hid2),1)    
+    fe_tap = U_naive + Onsager - S
+    fe = free_energy(rbm, vis)
+return fe_tap - fe
+"""
+
+function free_energy_tap(rbm::RBM, mag_vis::Mat, mag_hid::Mat) 
+    mag_vis2 = abs2.(mag_vis)
+    mag_hid2 = abs2.(mag_hid)
+
+
+    Entropy = sum(entropyMF(rbm, mag_vis, mag_hid),1)
+    U_naive = -( mag_vis*rbm.vbias + mag_hid*rbm.hbias + sum(mag_hid.*(rbm.W*mag_vis),1) )
+    Onsager = -( 0.5* sum( (rbm.W2*(1-mag_vis2)).*(1-mag_hid2,1) ) )
+    fe_tap = Entropy-U_naive-Onsager
+    return fe_tap
+end
+
+
+
+function entropyMF(rbm::RBM, mag_vis::Mat, mag_hid::Mat)
+    S =  entropy_bin(0.5*(1+mag_vis)) + entropy_bin(0.5*(1-mag_vis))
+    S += entropy_bin(0.5*(1+mag_hid)) + entropy_bin(0.5*(1-mag_hid))
+    return S
+end
 
 function score_samples(rbm::AbstractRBM, vis::Mat;
                           sample_size=10000)
@@ -218,7 +272,7 @@ function score_samples(rbm::AbstractRBM, vis::Mat;
     vis_corrupted = copy(vis)
     idxs = rand(1:n_feat, n_samples)
     for (i, j) in zip(idxs, 1:n_samples)
-        vis_corrupted[i, j] = 1 - vis_corrupted[i, j]
+        vis_corrupted[i, j] = rbm.flip(vis_corrupted[i, j]) # 1 - vis_corrupted[i, j]
     end
 
     fe = free_energy(rbm, vis)
@@ -234,7 +288,8 @@ function score_samples(rbm::AbstractRBM, vis::Mat;
 end
 
 function pseudo_likelihood(rbm::AbstractRBM, X)
-    return mean(score_samples(rbm, X))
+    N=size(X,1)
+    return mean(score_samples(rbm, X))/N
 end
 
 
@@ -436,7 +491,8 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
     end
     n_epochs = @get(ctx, :n_epochs, 10)
     scorer = @get_or_create(ctx, :scorer, pseudo_likelihood)
-    reporter = @get_or_create(ctx, :reporter, TextReporter())
+    reporter = @get_or_create(ctx, :reporter, TextReporter)
+    println("INIT ",scorer(rbm, X))
     for epoch=1:n_epochs
         epoch_time = @elapsed begin
             for (batch_start, batch_end) in batch_idxs
@@ -446,16 +502,17 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
                 batch = ensure_type(T, batch)
                 fit_batch!(rbm, batch, ctx)
                 #println(batch_end/batch_size)
-                if ((typeof(reporter) <: BatchReporter) &&
-                    ((batch_end/batch_size) % 10 == 0))
-		    reporter.exec(rbm, epoch, scorer(rbm,X), ctx)
-		end
+                #if ((typeof(reporter) <: BatchReporter) &&
+                #    ((batch_end/batch_size) % 10 == 0))
+		          #reporter.exec(rbm, epoch, scorer(rbm,X), ctx)
+		        #end
             end
         end
         score = scorer(rbm, X)
-        if typeof(reporter) <: EpochReporter 
-          reporter.exec(reporter, rbm, epoch, epoch_time, score, ctx)
-        end
+        #if typeof(reporter) <: EpochReporter 
+        #report(reporter, rbm, epoch, epoch_time, score, ctx)
+        report(epoch, epoch_time, score, ctx)
+        #end
     end
     return rbm
 end
@@ -498,3 +555,96 @@ hbias(rbm::RBM) = rbm.hbias
 
 """Get biases of visible units"""
 vbias(rbm::RBM) = rbm.vbias
+
+
+function mag_vis_nmf(rbm::RBM, m_vis::Mat{Float64}, m_hid::Mat{Float64})
+    return(tanh.(PassHidToVis(rbm,m_hid)))
+end
+
+function mag_hid_nmf(rbm::RBM, m_vis::Mat{Float64}, m_hid::Mat{Float64})
+    return(tanh.(PassVisToHid(rbm,m_vis)))
+end
+
+function mag_vis_tap2(rbm::RBM, m_vis::Mat{Float64}, m_hid::Mat{Float64})
+    # See paper of federico
+    tanh.(PassHidToVis(rbm,m_hid) - (rbm.W2'*(1-abs2.(m_hid))).*m_vis)
+end
+
+function mag_hid_tap2(rbm::RBM, m_vis::Mat{Float64}, m_hid::Mat{Float64})
+    # See paper of federico
+    tanh.(PassVisToHid(rbm,m_vis) - (rbm.W2*(1-abs2.(m_vis))).*m_hid)
+end
+
+function iter_mag_training(rbm::RBM, vis::Mat{Float64}, ctx::Dict; n_times=1)
+    approx = @get(ctx, :approx, "tap2")
+    dump =   @get(ctx, :dump ,0.5)
+
+    v_pos = vis
+    h_pos = rbm.activation(PassVisToHid(rbm,vis))
+    if approx == "nmf"
+        mag_vis = mag_vis_nmf
+        mag_hid = mag_hid_nmf
+    elseif approx == "tap2"
+        mag_vis = mag_vis_tap2
+        mag_hid = mag_hid_tap2
+    end
+
+    m_vis = (1-dump) * mag_vis(rbm, vis, h_pos) + dump * vis
+    m_hid = (1-dump) * mag_hid(rbm, m_vis, h_pos) + dump * h_pos
+    for i=1:n_times-1
+       m_vis = (1-dump) * mag_vis(rbm, m_vis, m_hid) + dump * m_vis
+       m_hid = (1-dump) * mag_hid(rbm, m_vis, m_hid) + dump * m_hid
+    end
+
+    return v_pos, h_pos, m_vis, m_hid
+end
+
+function iter_mag(rbm::RBM, vis::Mat{Float64}, ctx::Dict; n_times=1)
+    approx = @get(ctx, :approx, "tap2")
+    dump =   @get(ctx, :dump ,0.5)
+
+    if approx == "nmf"
+        mag_vis = mag_vis_nmf
+        mag_hid = mag_hid_nmf
+    elseif approx == "tap2"
+        mag_vis = mag_vis_tap2
+        mag_hid = mag_hid_tap2
+    end
+
+    m_vis = (1-dump) * mag_vis(rbm, vis, h_pos) + dump * vis
+    m_hid = (1-dump) * mag_hid(rbm, m_vis, h_pos) + dump * h_pos
+    for i=1:n_times-1
+       m_vis = (1-dump) * mag_vis(rbm, m_vis, m_hid) + dump * m_vis
+       m_hid = (1-dump) * mag_hid(rbm, m_vis, m_hid) + dump * m_hid
+    end
+    return m_vis, m_hid
+end
+
+
+function sampler_UpdMeanfield(rbm::RBM, vis::Mat, ctx::Dict)
+    n_gibbs = @get(ctx, :n_gibbs, 1)
+    v_pos, h_pos, v_neg, h_neg = iter_mag_training(rbm, vis, ctx; n_times=n_gibbs)
+    #println(v_neg)
+    #readline(STDIN)
+    return v_pos, h_pos, v_neg, h_neg
+end
+
+
+function persistent_meanfield(rbm::RBM, vis::Mat, ctx::Dict)
+    rbm.W2 = abs2.(rbm.W)
+    n_gibbs = @get(ctx, :n_gibbs, 1)
+    persistent_chain = @get_array(ctx, :persistent_chain, size(vis), vis)
+    if size(persistent_chain) != size(vis)
+        println("persistent_chain not initialized")
+        # persistent_chain not initialized or batch size changed
+        # re-initialize
+        persistent_chain = vis
+    end
+    # take positive samples from real data (get h_pos)
+    v_pos, h_pos, _, _ = iter_mag_training(rbm, vis, ctx)
+    # take negative samples from "fantasy particles"
+    _, _, v_neg, h_neg = iter_mag_training(rbm, persistent_chain, ctx; n_times=n_gibbs)
+    copy!(ctx[:persistent_chain], v_neg)
+    return v_pos, h_pos, v_neg, h_neg
+end
+

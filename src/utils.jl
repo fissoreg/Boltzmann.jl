@@ -115,12 +115,29 @@ function MeansIsing(x)
   return 2*x-1
 end
 
+function MargHiddenBernoulli(x)
+  return 1+exp.(x)
+end
+
+function MargHiddenIsing(x)
+  return 2*cosh.(x)
+end
+
+function FlipBernoulli(x)
+  return 1-x
+end
+
+function FlipIsing(x)
+    -x
+end
+
+
 const KNOWN_OPTIONS =
     [:debug, :gradient, :update, :sampler, :scorer, :reporter,
      :batch_size, :n_epochs, :n_gibbs,
      :lr, :momentum, :weight_decay_kind, :weight_decay_rate,
      :sparsity_cost, :sparsity_target,
-     :randomize,
+     :randomize, :approx,
      # deprecated options
      :n_iter]
 const DEPRECATED_OPTIONS = Dict(:n_iter => :n_epochs)
@@ -191,4 +208,22 @@ function add!(X::Array{T}, inc::T) where T
     @simd for i=1:length(X)
         @inbounds X[i] += inc
     end
+end
+
+function getBiasFromSamples(Data, fact::Float64; eps=1e-8)
+    InitialVisBias = zeros(size(Data,1))
+    if !isempty(Data)
+        ProbVis = mean(Data,2)             # Mean across  samples
+        ProbVis = (ProbVis+1)/2
+
+        ProbVis = max(ProbVis,eps)              # Some regularization (avoid Inf/NaN)
+        ProbVis = min(ProbVis,1 - eps)          # ''
+
+        InitialVisBias = fact*log(ProbVis ./ (1-ProbVis)) # Biasing as the log-proportion
+    end
+    return InitialVisBias
+end
+
+function entropy_bin(x)
+    return -x.*log(x)
 end
