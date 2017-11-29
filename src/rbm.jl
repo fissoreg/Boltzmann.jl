@@ -510,18 +510,18 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
                 batch = ensure_type(T, batch)
                 current_batch += 1
                 fit_batch!(rbm, batch, ctx)
-                #println(batch_end/batch_size)
-                #if ((typeof(reporter) <: BatchReporter) &&
-                #    ((batch_end/batch_size) % 10 == 0))
-		          #reporter.exec(rbm, epoch, scorer(rbm,X), ctx)
-		        #end
+                #println(current_batch)
+                #println((typeof(reporter) <: BatchReporter) && (current_batch % reporter.every) == 0)
+                if ((typeof(reporter) <: BatchReporter) &&
+                    (current_batch % reporter.every) == 0)
+		    report(reporter, rbm, epoch, current_batch, scorer, X, ctx)
+		end
             end
         end
-        score = scorer(rbm, X)
-        #if typeof(reporter) <: EpochReporter 
-        #report(reporter, rbm, epoch, epoch_time, score, ctx)
-        report(epoch, epoch_time, score, ctx)
-        #end
+        #score = scorer(rbm, X)
+        if typeof(reporter) <: EpochReporter 
+          report(reporter, rbm, epoch, epoch_time, scorer, X, ctx)
+        end
     end
     return rbm
 end
