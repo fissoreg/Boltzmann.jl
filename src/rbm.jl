@@ -163,35 +163,37 @@ end
 
 
 ## scoring
+function fe_exp(rbm::RBM{T,V,IsingSpin}, vis::Mat) where {T,V}
+    2*cosh.(rbm.W * vis .+ rbm.hbias)
+end
 
-function free_energy(rbm::RBM, vis::Mat)
+function fe_exp(rbm::RBM{T,V,Bernoulli}, vis::Mat) where {T,V}
+    1 + exp.(rbm.W * vis .+ rbm.hbias)
+end
+
+function free_energy(rbm::AbstractRBM, vis::Mat)
     vb = sum(vis .* rbm.vbias, 1)
 
-    fe_exp = 1 + exp.(rbm.W * vis .+ rbm.hbias)
-    tofinite!(fe_exp; nozeros=true)
+    e_fe = fe_exp(rbm, vis)
+    tofinite!(e_fe; nozeros=true)
 
-    Wx_b_log = sum(log.(fe_exp), 1)
+    Wx_b_log = sum(log.(e_fe), 1)
     result = - vb - Wx_b_log
 
     return result
 end
 
-# a copy-paste!!!!!!!!!!!!!! fhweihfioewmfcniluewynveiuewiufhu
-function free_energy(rbm::RBM{T,IsingSpin,IsingSpin}, vis::Mat) where T
-    println("Correct fe")
-    vb = sum(vis .* rbm.vbias, 1)
-
-    fe_exp = 2*cosh.(rbm.W * vis .+ rbm.hbias)
-    tofinite!(fe_exp; nozeros=true)
-
-    Wx_b_log = sum(log.(fe_exp), 1)
-    result = - vb - Wx_b_log
-
-    return result
+# warning: not sure why Type{} is needed...
+function flip(::Type{IsingSpin}, value)
+  -value
 end
 
-function score_samples(rbm::AbstractRBM, vis::Mat;
-                          sample_size=10000)
+function flip(::Type{Bernoulli}, values)
+  1 - value
+end
+
+function score_samples(rbm::RBM{T,V,H}, vis::Mat;
+                          sample_size=10000) where {T,V,H}
     if issparse(vis)
         # sparse matrices may be infeasible for this operation
         # so using only little sample
@@ -202,7 +204,7 @@ function score_samples(rbm::AbstractRBM, vis::Mat;
     vis_corrupted = copy(vis)
     idxs = rand(1:n_feat, n_samples)
     for (i, j) in zip(idxs, 1:n_samples)
-        vis_corrupted[i, j] = 1 - vis_corrupted[i, j]
+        vis_corrupted[i, j] = flip(H, vis_corrupted[i, j])
     end
 
     fe = free_energy(rbm, vis)
