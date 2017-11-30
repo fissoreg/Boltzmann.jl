@@ -67,9 +67,12 @@ Optional parameters:
 
 """
 function RBM(T::Type, V::Type, H::Type,activation::Function,
-             n_vis::Int, n_hid::Int; sigma=0.01)
+             n_vis::Int, n_hid::Int; sigma=0.01, X=[])
+
+    vbias = length(X) == 0 ? zeros(n_vis) : vbias_init(X)
+
     RBM{T,V,H}(map(T, rand(Normal(0, sigma), n_hid, n_vis)),
-             zeros(n_vis), zeros(n_hid),activation)
+             vbias, zeros(n_hid),activation)
 end
 
 RBM(V::Type, H::Type, n_vis::Int, n_hid::Int; sigma=0.01) =
@@ -86,8 +89,8 @@ BernoulliRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
 GRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
     RBM(Normal, Bernoulli, n_vis, n_hid; sigma=sigma)
 
-IsingRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
-	RBM(Float64, IsingSpin, IsingSpin, IsingActivation, n_vis, n_hid)
+IsingRBM(n_vis::Int, n_hid::Int; sigma=0.01, X=[]) =
+	RBM(Float64, IsingSpin, IsingSpin, IsingActivation, n_vis, n_hid; sigma=sigma, X=X)
 
 
 function Base.show(io::IO, rbm::RBM{T,V,H}) where {T,V,H}
