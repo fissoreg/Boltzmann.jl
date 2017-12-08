@@ -107,16 +107,6 @@ function IsingActivation(x)
   return 1 ./ (1 + exp.(-2x))
 end
 
-function vbias_init(X, eps=1e-8)
-  p = (mean(X,2) + 1) / 2
-
-  # avoiding -Inf values
-  p = max(p, eps)
-  p = min(p, 1-eps)
-
-  v = 0.5 * log.(p ./ (1-p))
-  squeeze(v, 2)
-end
 ##########################################
 
 const KNOWN_OPTIONS =

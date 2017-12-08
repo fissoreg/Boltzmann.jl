@@ -51,6 +51,27 @@ end
 
 end
 
+function vbias_init(::Type{Degenerate}, X; eps=1e-8)
+  p = mean(X,2)
+
+  p = max(p, eps)
+  p = min(p, 1-eps)
+
+  v = log.(p ./ (1 - p))
+  squeeze(v,2)
+end
+
+function vbias_init(::Type{IsingSpin}, X; eps=1e-8)
+  p = (mean(X,2) + 1) / 2
+
+  # avoiding -Inf values
+  p = max(p, eps)
+  p = min(p, 1-eps)
+
+  v = 0.5 * log.(p ./ (1-p))
+  squeeze(v, 2)
+end
+
 """
 Construct RBM. Parameters:
 
@@ -69,25 +90,25 @@ Optional parameters:
 function RBM(T::Type, V::Type, H::Type,activation::Function,
              n_vis::Int, n_hid::Int; sigma=0.01, X=[])
 
-    vbias = length(X) == 0 ? zeros(n_vis) : vbias_init(X)
+    vbias = length(X) == 0 ? zeros(n_vis) : vbias_init(V, X)
 
     RBM{T,V,H}(map(T, rand(Normal(0, sigma), n_hid, n_vis)),
              vbias, zeros(n_hid),activation)
 end
 
-RBM(V::Type, H::Type, n_vis::Int, n_hid::Int; sigma=0.01) =
-    RBM(Float64, V, H, logistic, n_vis, n_hid; sigma=sigma)
+RBM(V::Type, H::Type, n_vis::Int, n_hid::Int; sigma=0.01, X=[]) =
+    RBM(Float64, V, H, logistic, n_vis, n_hid; sigma=sigma, X=X)
 
 
 # some well-known RBM kinds
 
 """Same as RBM{Float64,Degenerate,Bernoulli}"""
-BernoulliRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
-    RBM(Degenerate, Bernoulli, n_vis, n_hid; sigma=sigma)
+BernoulliRBM(n_vis::Int, n_hid::Int; sigma=0.01, X=[]) =
+    RBM(Degenerate, Bernoulli, n_vis, n_hid; sigma=sigma, X=X)
 
 """Same as RBM{Float64,Gaussian,Bernoulli}"""
-GRBM(n_vis::Int, n_hid::Int; sigma=0.01) =
-    RBM(Normal, Bernoulli, n_vis, n_hid; sigma=sigma)
+GRBM(n_vis::Int, n_hid::Int; sigma=0.01, X=[]) =
+    RBM(Normal, Bernoulli, n_vis, n_hid; sigma=sigma, X=X)
 
 IsingRBM(n_vis::Int, n_hid::Int; sigma=0.01, X=[]) =
 	RBM(Float64, IsingSpin, IsingSpin, IsingActivation, n_vis, n_hid; sigma=sigma, X=X)
@@ -188,7 +209,7 @@ function flip(::Type{IsingSpin}, value)
   -value
 end
 
-function flip(::Type{Bernoulli}, values)
+function flip(::Type{Bernoulli}, value)
   1 - value
 end
 
