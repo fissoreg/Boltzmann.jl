@@ -11,7 +11,7 @@ function report(r::TextReporter, rbm::AbstractRBM,
     println("[Epoch $epoch] Score: $(scorer(rbm, X)) [$(epoch_time)s]")
 end
 
-function report(r::TextReporter, dbn::DBN, epoch::Int, layer::Int, ctx::Dict{Any,Any})
+function report(r::TextReporter, dbn::DBN, epoch::Int, layer::Int) #, ctx::Dict{Any,Any})
     println("[Layer $layer] Starting epoch $epoch")
 end
 

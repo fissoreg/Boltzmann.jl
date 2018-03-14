@@ -57,7 +57,7 @@ end
 
 
 function fit(dbn::DBN, X::Mat{Float64}; ctx = Dict{Any,Any}())
-    @assert minimum(X) >= 0 && maximum(X) <= 1
+    #@assert minimum(X) >= 0 && maximum(X) <= 1
     n_samples = size(X,2)
     batch_size = @get(ctx, :batch_size, 100)
     n_batches = round(Int, ceil(n_samples / batch_size))
