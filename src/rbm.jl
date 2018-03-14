@@ -242,7 +242,7 @@ end
 
 function pseudo_likelihood(rbm::AbstractRBM, X)
     m = mean(score_samples(rbm, X))
-    return m == -Inf ? 0 : m
+    return m == -Inf ? 0 : m/size(X,2)
 end
 
 
