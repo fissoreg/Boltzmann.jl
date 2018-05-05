@@ -51,6 +51,10 @@ end
 
 end
 
+function vbias_init(rbm::RBM{T,V,H}, X; eps = 1e-8) where {T,V,H}
+  vbias_init(V, X; eps = eps)
+end
+
 function vbias_init(::Type{Degenerate}, X; eps=1e-8)
   p = mean(X,2)
 

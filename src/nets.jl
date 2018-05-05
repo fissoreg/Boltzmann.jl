@@ -62,16 +62,37 @@ function fit(dbn::DBN, X::Mat{Float64}; ctx = Dict{Any,Any}())
     batch_size = @get(ctx, :batch_size, 100)
     n_batches = round(Int, ceil(n_samples / batch_size))
     n_epochs = @get(ctx, :n_epochs, 10)
+    scorer = @get_or_create(ctx, :scorer, pseudo_likelihood)
     reporter = @get_or_create(ctx, :reporter, TextReporter())
+    init_bias = @get_or_create(ctx, :init_bias, false)
     for k = 1:length(dbn.layers)
-        for epoch=1:n_epochs
-            report(reporter, dbn, epoch, k)
-            for i=1:n_batches
-                batch = X[:, ((i-1)*batch_size + 1):min(i*batch_size, end)]
-                input = k == 1 ? batch : hid_means_at_layer(dbn, batch, k-1)
-                fit_batch!(dbn[k], input, ctx)
-            end
+      for epoch=1:n_epochs
+
+	if init_bias
+	  if k == 1
+	    dbn[k].vbias = vbias_init(dbn[1], X)
+	  else
+	    dbn[k].vbias = vbias_init(dbn[k], hid_means_at_layer(dbn, X, k-1)) 
+	  end
+	end
+
+        epoch_time = @elapsed begin 
+          #report(reporter, dbn, epoch, k)
+          for i=1:n_batches
+            batch = X[:, ((i-1)*batch_size + 1):min(i*batch_size, end)]
+            input = k == 1 ? batch : hid_means_at_layer(dbn, batch, k-1)
+            fit_batch!(dbn[k], input, ctx)
+          end
+
         end
+
+        #score = scorer(rbm, X)
+	if typeof(reporter[k]) <: EpochReporter 
+          samples = foldl(*, 1, [dbn[i].W for i = k-1:-1:1]) * X
+	  report(reporter[k], dbn[k], epoch, epoch_time, scorer, samples, ctx)
+        end
+
+      end
     end
 end
 
