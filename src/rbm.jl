@@ -112,7 +112,7 @@ BernoulliRBM(n_vis::Int, n_hid::Int; sigma=0.01, X=[]) =
 
 """Same as RBM{Float64,Gaussian,Bernoulli}"""
 GRBM(n_vis::Int, n_hid::Int; sigma=0.01, X=[]) =
-    RBM(Normal, Bernoulli, n_vis, n_hid; sigma=sigma, X=X)
+    RBM(Float64, Normal, Bernoulli, tanh, n_vis, n_hid; sigma=sigma, X=X)
 
 IsingRBM(n_vis::Int, n_hid::Int; sigma=0.01, X=[]) =
 	RBM(Float64, IsingSpin, IsingSpin, IsingActivation, n_vis, n_hid; sigma=sigma, X=X)
