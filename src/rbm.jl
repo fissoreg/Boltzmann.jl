@@ -127,14 +127,22 @@ end
 ## utils
 
 function hid_means(rbm::RBM, vis::Mat{T}) where T
-    p = rbm.W * vis .+ rbm.hbias
-    return rbm.activation(p)
+    #p = rbm.W * vis .+ rbm.hbias
+    #return rbm.activation(p)
+
+    s = rbm.W * vis / sqrt(size(rbm.W, 2))  .+ rbm.hbias
+    m = tanh.(s)
+    p = (m + 1) / 2
+    return p
 end
 
 
 function vis_means(rbm::RBM, hid::Mat{T}) where T
-    p = rbm.W' * hid .+ rbm.vbias
-    return rbm.activation(p)
+    #p = rbm.W' * hid .+ rbm.vbias
+    #return rbm.activation(p)
+
+    s = rbm.W' * hid / sqrt(size(rbm.W, 2)) .+ rbm.vbias
+    return s
 end
 
 
