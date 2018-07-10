@@ -112,7 +112,7 @@ BernoulliRBM(n_vis::Int, n_hid::Int; sigma=0.01, X=[]) =
 
 """Same as RBM{Float64,Gaussian,Bernoulli}"""
 GRBM(n_vis::Int, n_hid::Int; sigma=0.01, X=[]) =
-    RBM(Float64, Normal, Bernoulli, tanh, n_vis, n_hid; sigma=sigma, X=X)
+    RBM(Float64, Normal, Bernoulli, logistic, n_vis, n_hid; sigma=sigma, X=X)
 
 IsingRBM(n_vis::Int, n_hid::Int; sigma=0.01, X=[]) =
 	RBM(Float64, IsingSpin, IsingSpin, IsingActivation, n_vis, n_hid; sigma=sigma, X=X)
@@ -127,22 +127,14 @@ end
 ## utils
 
 function hid_means(rbm::RBM, vis::Mat{T}) where T
-    #p = rbm.W * vis .+ rbm.hbias
-    #return rbm.activation(p)
-
-    s = rbm.W * vis / sqrt(size(rbm.W, 2))  .+ rbm.hbias
-    m = tanh.(s)
-    p = (m + 1) / 2
-    return p
+    p = rbm.W * vis .+ rbm.hbias
+    return rbm.activation(p)
 end
 
 
 function vis_means(rbm::RBM, hid::Mat{T}) where T
-    #p = rbm.W' * hid .+ rbm.vbias
-    #return rbm.activation(p)
-
-    s = rbm.W' * hid / sqrt(size(rbm.W, 2)) .+ rbm.vbias
-    return s
+    p = rbm.W' * hid .+ rbm.vbias
+    return rbm.activation(p)
 end
 
 
