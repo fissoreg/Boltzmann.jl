@@ -6,7 +6,7 @@ import StatsBase.fit
 import StatsBase.coef
 import StatsBase: sample, sample!
 
-@runonce const Mat{T} = AbstractArray{T, 2}
+@runonce const Mat{T, N} = AbstractArray{T, N}
 @runonce const Vec{T} = AbstractArray{T, 1}
 @runonce const Gaussian = Distributions.Normal
 @runonce const IsingSpin = Distributions.Categorical
@@ -412,6 +412,17 @@ function fit_batch!(rbm::RBM, X::Mat, ctx = Dict())
     return rbm
 end
 
+function get_batch(X::Mat, start::Int, stop::Int)
+  # Using a CartesianRange is the general solution, but notation is cumbersome (and it's not working!).
+  # Adopting a simple solution.
+
+  if(length(size(X)) == 2)
+    X[:, start:stop]
+  else
+    X[:, :, :, start:stop]
+  end
+end
+
 
 """
 Fit RBM to data `X`. Options that can be provided in the `opts` dictionary:
@@ -439,7 +450,8 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
     #@assert minimum(X) >= 0 && maximum(X) <= 1
     ctx = copy(opts)
     check_options(ctx)
-    n_examples = size(X, 2)
+    s = size(X)
+    n_examples = s[length(s)] # number of samples (both for RBM and CRBM)
     batch_size = @get(ctx, :batch_size, 100)
     n_batches = Int(ceil(n_examples/batch_size))
     batch_idxs = split_evenly(n_examples, batch_size)
@@ -455,7 +467,7 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
             for (batch_start, batch_end) in batch_idxs
                 # BLAS.gemm! can't handle sparse matrices, so cheaper
                 # to make it dense here
-                batch = full(X[:, batch_start:batch_end])
+		batch = full(get_batch(X, batch_start, batch_end))
                 batch = ensure_type(T, batch)
                 current_batch += 1
                 fit_batch!(rbm, batch, ctx)
