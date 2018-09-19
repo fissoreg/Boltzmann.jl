@@ -1,6 +1,6 @@
 
 
-if !isdefined(:__EXPRESSION_HASHES__)
+if !isdefined(@__MODULE__, :__EXPRESSION_HASHES__)
     __EXPRESSION_HASHES__ = Set{AbstractString}()
 end
 
@@ -100,7 +100,7 @@ end
 
 # maybe these could be moved to rbm.jl ##
 function logistic(x)
-    return 1 ./ (1 + exp.(-x))
+    return 1 ./ (1 .+ exp.(-x))
 end
 
 function IsingActivation(x)
@@ -137,7 +137,7 @@ end
 
 function split_evenly(n, len)
     n_parts = Int(ceil(n / len))
-    parts = Array{Tuple}(n_parts)
+    parts = Array{Tuple}(undef, n_parts)
     for i=1:n_parts
         start_idx = (i-1)*len + 1
         end_idx = min(i*len, n)
