@@ -104,7 +104,7 @@ function logistic(x)
 end
 
 function IsingActivation(x)
-  return 1 ./ (1 + exp.(-2x))
+  return 1 ./ (1 .+ exp.(-2x))
 end
 
 ##########################################

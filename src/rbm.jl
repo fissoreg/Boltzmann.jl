@@ -56,24 +56,24 @@ function vbias_init(rbm::RBM{T,V,H}, X; eps = 1e-8) where {T,V,H}
 end
 
 function vbias_init(::Type{Degenerate}, X; eps=1e-8)
-  p = mean(X,2)
+  p = mean(X, dims = 2)
 
-  p = max(p, eps)
-  p = min(p, 1-eps)
+  p = max.(p, eps)
+  p = min.(p, 1-eps)
 
-  v = log.(p ./ (1 - p))
-  squeeze(v,2)
+  v = log.(p ./ (1 .- p))
+  dropdims(v, dims = 2)
 end
 
 function vbias_init(::Type{IsingSpin}, X; eps=1e-8)
-  p = (mean(X,2) + 1) / 2
+  p = (mean(X, dims = 2) .+ 1) ./ 2
 
   # avoiding -Inf values
-  p = max(p, eps)
-  p = min(p, 1-eps)
+  p = max.(p, eps)
+  p = min.(p, 1-eps)
 
-  v = 0.5 * log.(p ./ (1-p))
-  squeeze(v, 2)
+  v = 0.5 * log.(p ./ (1 .- p))
+  dropdims(v, dims = 2)
 end
 
 """
@@ -149,7 +149,7 @@ function sample(::Type{Bernoulli}, means::Mat{T}) where T
 end
 
 function sample(::Type{IsingSpin}, means::Mat{T}) where T
-    return map(x -> x ? 1.0 : -1.0, rand(size(means)) .< means)
+    return map(x -> x ? 1.0 : -1.0, rand(T, size(means)) .< means)
 end
 
 function sample(::Type{Gaussian}, means::Mat{T}) where T
@@ -193,7 +193,7 @@ function fe_exp(rbm::RBM{T,V,IsingSpin}, vis::Mat) where {T,V}
 end
 
 function fe_exp(rbm::RBM{T,V,Bernoulli}, vis::Mat) where {T,V}
-    1 + exp.(rbm.W * vis .+ rbm.hbias)
+    1 .+ exp.(rbm.W * vis .+ rbm.hbias)
 end
 
 function free_energy(rbm::AbstractRBM, vis::Mat)
