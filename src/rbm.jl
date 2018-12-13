@@ -197,6 +197,14 @@ function fe_exp(rbm::RBM{T,V,Bernoulli}, vis::Mat) where {T,V}
 end
 
 function free_energy(rbm::AbstractRBM, vis::Mat)
+    # TODO: find a better solution for missing values!!!!
+    for i in eachindex(vis)
+        if ismissing(vis[i])
+	    vis[i] = 0.0
+	end
+    end
+    #####################################################
+
     vb = sum(vis .* rbm.vbias, dims = 1)
 
     e_fe = fe_exp(rbm, vis)
@@ -297,7 +305,7 @@ Returns:
  * (dW, db, dc) - tuple of gradients for weights, visible and hidden biases,
                   respectively
 """
-function gradient_classic(rbm::RBM, vis::Mat{T}, ctx::Dict) where T
+function gradient_classic(rbm::RBM{T,V,H}, vis, ctx::Dict) where {T,V,H}
     sampler = @get_or_create(ctx, :sampler, persistent_contdiv)
     v_pos, h_pos, v_neg, h_neg = sampler(rbm, vis, ctx)
     dW = @get_array(ctx, :dW_buf, size(rbm.W), similar(rbm.W))
@@ -458,7 +466,7 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
                 # BLAS.gemm! can't handle sparse matrices, so cheaper
                 # to make it dense here
                 batch = Matrix(X[:, batch_start:batch_end])
-                batch = ensure_type(T, batch)
+                #batch = ensure_type(T, batch)
                 current_batch += 1
                 fit_batch!(rbm, batch, ctx)
                 #println(current_batch)
