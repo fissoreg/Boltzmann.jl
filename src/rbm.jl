@@ -153,7 +153,8 @@ function sample(::Type{IsingSpin}, means::Mat{T}) where T
 end
 
 function sample(::Type{Gaussian}, means::Mat{T}) where T
-    sigma2 = 1                   # using fixed standard diviation
+    sigma = 1
+    sigma2 = sigma * sigma                   # using fixed standard diviation
     samples = zeros(T,size(means))
     for j=1:size(means, 2), i=1:size(means, 1)
         samples[i, j] = T(rand(Normal(means[i, j], sigma2)))
@@ -192,12 +193,13 @@ function fe_exp(rbm::RBM{T,V,IsingSpin}, vis::Mat) where {T,V}
     2*cosh.(rbm.W * vis .+ rbm.hbias)
 end
 
-function fe_exp(rbm::RBM{T,V,Bernoulli}, vis::Mat) where {T,V}
+function fe_exp(rbm::AbstractRBM{T,V,Bernoulli}, vis::Mat) where {T,V}
     1 .+ exp.(rbm.W * vis .+ rbm.hbias)
 end
 
 function free_energy(rbm::AbstractRBM, vis::Mat)
     # TODO: find a better solution for missing values!!!!
+    vis = deepcopy(vis)
     for i in eachindex(vis)
         if ismissing(vis[i])
 	    vis[i] = 0.0
@@ -225,7 +227,7 @@ function flip(::Type{Bernoulli}, value)
   1 - value
 end
 
-function score_samples(rbm::RBM{T,V,H}, vis::Mat;
+function score_samples(rbm::AbstractRBM{T,V,H}, vis::Mat;
                           sample_size=10000) where {T,V,H}
     if issparse(vis)
         # sparse matrices may be infeasible for this operation
@@ -233,6 +235,7 @@ function score_samples(rbm::RBM{T,V,H}, vis::Mat;
         cols = rand(1:size(vis, 2), sample_size)
         vis = Matrix(vis[:, cols])
     end
+
     n_feat, n_samples = size(vis)
     vis_corrupted = copy(vis)
     idxs = rand(1:n_feat, n_samples)
@@ -379,7 +382,7 @@ function grad_apply_sparsity!(rbm::RBM{T}, X::Mat,
 end
 
 
-function update_weights!(rbm::RBM, dtheta::Tuple, ctx::Dict)
+function update_weights!(rbm::AbstractRBM, dtheta::Tuple, ctx::Dict)
     dW, db, dc = dtheta
     axpy!(1.0, dW, rbm.W)
     rbm.vbias += db
@@ -414,7 +417,7 @@ end
 
 ## fitting
 
-function fit_batch!(rbm::RBM, X::Mat, ctx = Dict())
+function fit_batch!(rbm::AbstractRBM, X::Mat, ctx = Dict())
     grad = @get_or_create(ctx, :gradient, gradient_classic)
     upd = @get_or_create(ctx, :update, update_classic!)
     dtheta = grad(rbm, X, ctx)
@@ -445,7 +448,7 @@ NOTE: this function is incremental, so one can, for example, run it for
 10 epochs, then inspect the model, then run it for 10 more epochs
 and check the difference.
 """
-function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
+function fit(rbm::AbstractRBM{T}, X::Mat, opts::Dict{Any,Any}) where T
     #@assert minimum(X) >= 0 && maximum(X) <= 1
     ctx = copy(opts)
     check_options(ctx)
@@ -479,13 +482,15 @@ function fit(rbm::RBM{T}, X::Mat, opts::Dict{Any,Any}) where T
         end
         #score = scorer(rbm, X)
         if typeof(reporter) <: EpochReporter 
-          report(reporter, rbm, epoch, epoch_time, scorer, X, ctx)
+	  if((epoch % reporter.every) == 0)
+            report(reporter, rbm, epoch, epoch_time, scorer, X, ctx)
+	  end
         end
     end
     return rbm
 end
 
-fit(rbm::RBM, X::Mat; opts...) = fit(rbm, X, Dict{Any,Any}(opts))
+fit(rbm::AbstractRBM, X::Mat; opts...) = fit(rbm, X, Dict{Any,Any}(opts))
 
 
 ## operations on learned RBM
