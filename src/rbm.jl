@@ -308,7 +308,7 @@ Returns:
  * (dW, db, dc) - tuple of gradients for weights, visible and hidden biases,
                   respectively
 """
-function gradient_classic(rbm::RBM{T,V,H}, vis, ctx::Dict) where {T,V,H}
+function gradient_classic(rbm::AbstractRBM{T,V,H}, vis, ctx::Dict) where {T,V,H}
     sampler = @get_or_create(ctx, :sampler, persistent_contdiv)
     v_pos, h_pos, v_neg, h_neg = sampler(rbm, vis, ctx)
     dW = @get_array(ctx, :dW_buf, size(rbm.W), similar(rbm.W))
@@ -326,7 +326,7 @@ end
 
 ## updating
 
-function grad_apply_learning_rate!(rbm::RBM{T,V,H}, X::Mat,
+function grad_apply_learning_rate!(rbm::AbstractRBM{T,V,H}, X::Mat,
                                    dtheta::Tuple, ctx::Dict) where {T,V,H}
     dW, db, dc = dtheta
     lr = T(@get(ctx, :lr, 0.1))
