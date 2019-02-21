@@ -126,13 +126,13 @@ end
 
 ## utils
 
-function hid_means(rbm::RBM, vis::Mat{T}) where T
+function hid_means(rbm::AbstractRBM, vis::Mat{T}) where T
     p = rbm.W * vis .+ rbm.hbias
     return rbm.activation(p)
 end
 
 
-function vis_means(rbm::RBM, hid::Mat{T}) where T
+function vis_means(rbm::AbstractRBM, hid::Mat{T}) where T
     p = rbm.W' * hid .+ rbm.vbias
     return rbm.activation(p)
 end
