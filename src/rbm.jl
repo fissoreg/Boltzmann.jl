@@ -471,20 +471,25 @@ function fit(rbm::AbstractRBM{T}, X::Mat, opts::Dict{Any,Any}) where T
                 batch = Matrix(X[:, batch_start:batch_end])
                 #batch = ensure_type(T, batch)
                 current_batch += 1
+                ctx[:batch] = current_batch
                 fit_batch!(rbm, batch, ctx)
                 #println(current_batch)
                 #println((typeof(reporter) <: BatchReporter) && (current_batch % reporter.every) == 0)
-                if ((typeof(reporter) <: BatchReporter) &&
-                    (current_batch % reporter.every) == 0)
-		    report(reporter, rbm, epoch, current_batch, scorer, X, ctx)
-		end
+                for rep in reporter
+                  if ((typeof(rep) <: BatchReporter) &&
+                      (current_batch % rep.every) == 0)
+		      report(rep, rbm, epoch, current_batch, scorer, X, ctx)
+		  end
+                end
             end
         end
         #score = scorer(rbm, X)
-        if typeof(reporter) <: EpochReporter 
-	  if((epoch % reporter.every) == 0)
-            report(reporter, rbm, epoch, epoch_time, scorer, X, ctx)
-	  end
+        for rep in reporter
+          if typeof(rep) <: EpochReporter 
+	    if((epoch % rep.every) == 0)
+              report(rep, rbm, epoch, epoch_time, scorer, X, ctx)
+	    end
+          end
         end
     end
     return rbm
