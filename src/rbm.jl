@@ -463,6 +463,10 @@ function fit(rbm::AbstractRBM{T}, X::Mat, opts::Dict{Any,Any}) where T
     scorer = @get_or_create(ctx, :scorer, pseudo_likelihood)
     reporter = @get_or_create(ctx, :reporter, TextReporter())
     for epoch=1:n_epochs
+        # stopping condition
+        stop = @get_or_create(ctx, :stop, false)
+        if stop break end
+
         epoch_time = @elapsed begin
             current_batch = 0
             for (batch_start, batch_end) in batch_idxs
